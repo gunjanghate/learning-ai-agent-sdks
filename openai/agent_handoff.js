@@ -1,10 +1,34 @@
 import dotenv from 'dotenv'
 import {Agent, tool} from '@openai/agents'
 import {z} from 'zod'
-import fs from'node:fs/promises'
+import fs from 'node:fs/promises'
 dotenv.config();
 
+// Refund Agent
+const processRefund = tool({
+    name:"processFund",
+    description: " This toll processes refund",
+    parameters: z.object({
+        cust_id: z.string().describe(""),
+        reason: z.string().describe("")
+    }),
+    execute: async function({cust_id, reason}){
+        await fs.appendFile('./refunds.txt', `Refund for ${cust_id} for ${reason}`,
+            'utf-8'
+        )
 
+        return {refundIssued: true}
+    }
+})
+
+const refundAgent = new Agent({
+    name : "Refund Agent",
+    instructions: `You are a Refund Agent...`,
+    tools: [processRefund]
+})
+
+
+// Sales Agent
 const fetchAvailablePlans = tool({
     name: "fetchAvailablePlans",
     description:"Feteches available plans from internet",
@@ -27,27 +51,6 @@ const fetchAvailablePlans = tool({
     }
 })
 
-const processRefund = tool({
-    name:"processFund",
-    description: " This toll processes refund",
-    parameters: z.object({
-        cust_id: z.string().describe(""),
-        reason: z.string().describe("")
-    }),
-    execute: async function({cust_id, reason}){
-        await fs.appendFile('./refunds.txt', `Refund for ${cust_id} for ${reason}`,
-            'utf-8'
-        )
-
-        return {refundIssued: true}
-    }
-})
-
-const refundAgent = new Agent({
-    name : "Refund Agent",
-    instructions: `You are a Refund Agent...`,
-    tools: [processRefund]
-})
 
 const salesAgent = new Agent({
     name: "Sales Agent",
@@ -92,10 +95,26 @@ const salesAgent = new Agent({
 })
 
 
-async function runaAgent(query = ''){
-    const result = await runaAgent(salesAgent, query)
-    console.log(result.finalOutput);
+// Reception Agent
+const receptionAgent = new Agent({
+    name: "Reception Agent",
+    instructions: `You are a Reception Agent. Greet visitors, answer basic questions about the company, and direct them to the appropriate department or individual based on their needs. Be polite, professional, and efficient in your responses. Handoff to specialized agents when necessary.`,
+    handoffDescription: `If you are unable to assist the visitor or if their request requires human intervention, politely inform them that you will connect them to a human representative for further assistance.
+    - sales agent for sales-related inquiries.
+    - refund agent for refund-related inquiries.
+`,
+    handoffs: [salesAgent, refundAgent]
+
+})
+
+
+
+async function main(query = ""){
+    const res = await run(receptionAgent, query)
+    console.log(res.finalOutput);
+    console.log("Handoff Details:", res.handoffDetails);
 
 }
 
-runaAgent("I want to buy internet plan for my office")
+
+main("I would like to know about your pricing plans and also want to process a refund.");
